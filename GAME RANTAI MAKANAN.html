@@ -1,0 +1,733 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pulang Lewat Rantai Makanan</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: system-ui, Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #101d19;
+      color: #f5f8ed;
+    }
+
+    .app {
+      width: min(1100px, 100%);
+      margin: auto;
+      padding: 14px;
+    }
+
+    h1 {
+      margin: 0 0 5px;
+      font-size: clamp(1.3rem, 3vw, 2rem);
+    }
+
+    .subtitle {
+      margin: 0 0 12px;
+      color: #c8d9c6;
+    }
+
+    .hud {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      margin-bottom: 10px;
+    }
+
+    .pill {
+      padding: 8px 12px;
+      border-radius: 12px;
+      background: #263e32;
+      font-weight: 700;
+    }
+
+    .stage {
+      position: relative;
+      overflow: hidden;
+      border: 3px solid #82ae69;
+      border-radius: 18px;
+      background: #e9e7d8;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 16 / 9;
+      touch-action: none;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      background: #10231cdd;
+      text-align: center;
+    }
+
+    .overlay[hidden], .result[hidden], .tv-controls[hidden] {
+      display: none;
+    }
+
+    .card {
+      max-width: 560px;
+      padding: 22px;
+      border-radius: 18px;
+      background: #203c2d;
+      box-shadow: 0 12px 35px #0006;
+    }
+
+    .card h2 { margin-top: 0; }
+
+    button {
+      min-height: 46px;
+      padding: 10px 17px;
+      border: 0;
+      border-radius: 12px;
+      background: #f5ca55;
+      color: #292511;
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+      touch-action: none;
+    }
+
+    button:focus-visible {
+      outline: 3px solid white;
+      outline-offset: 3px;
+    }
+
+    .bottom {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .help {
+      max-width: 650px;
+      margin: 0;
+      line-height: 1.5;
+      color: #d7e3d3;
+    }
+
+    .tv-controls {
+      display: grid;
+      grid-template-columns: repeat(3, 52px);
+      gap: 5px;
+      justify-content: center;
+      user-select: none;
+    }
+
+    .tv-controls button {
+      min-height: 45px;
+      padding: 4px;
+    }
+
+    .tv-controls .empty { visibility: hidden; }
+
+    .result {
+      margin-top: 12px;
+      padding: 16px;
+      border-radius: 15px;
+      background: #263e32;
+    }
+
+    .result h2 { margin: 0 0 8px; }
+    .result p { margin: 7px 0; }
+    .result button { margin-top: 10px; }
+
+    @media (max-width: 600px) {
+      .app { padding: 9px; }
+      .pill { font-size: .86rem; padding: 7px 9px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <h1>🌳 Pulang Lewat Rantai Makanan</h1>
+    <p class="subtitle">Ingat posisi makanan, air, dan predator. Lalu gambar jalan pulang!</p>
+
+    <div class="hud" aria-live="polite">
+      <span class="pill" id="roundLabel">Peta 1 / 7</span>
+      <span class="pill" id="phaseLabel">Siap bermain</span>
+      <span class="pill" id="timerLabel">Waktu: —</span>
+      <span class="pill" id="scoreLabel">Total: 0</span>
+    </div>
+
+    <div class="stage">
+      <canvas id="game" width="960" height="540"
+        aria-label="Area permainan: gambar lintasan dari batu menuju rumah"></canvas>
+
+      <div class="overlay" id="overlay">
+        <div class="card">
+          <h2 id="overlayTitle">Siap mencari jalan pulang?</h2>
+          <p id="overlayText">
+            Amati peta selama 7 detik. Saat peta hilang, gambar lintasan dari
+            batu ke rumah dalam 12 detik. Makanan +10, air +20, predator −5.
+            Ada 7 peta.
+          </p>
+          <button id="startButton">Mulai bermain</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="bottom">
+      <p class="help" id="helpText">
+        Sentuh atau klik batu, lalu seret menuju rumah. Remote TV:
+        tombol arah menggerakkan penunjuk; OK/Enter mulai atau berhenti menggambar.
+      </p>
+
+      <div class="tv-controls" id="tvControls" hidden aria-label="Kontrol arah di layar">
+        <span class="empty"></span>
+        <button data-dir="up" aria-label="Atas">▲</button>
+        <span class="empty"></span>
+        <button data-dir="left" aria-label="Kiri">◀</button>
+        <button id="drawButton" aria-label="Mulai atau berhenti menggambar">●</button>
+        <button data-dir="right" aria-label="Kanan">▶</button>
+        <span class="empty"></span>
+        <button data-dir="down" aria-label="Bawah">▼</button>
+        <span class="empty"></span>
+      </div>
+    </div>
+
+    <section class="result" id="result" hidden aria-live="polite">
+      <h2 id="resultTitle">Hasil</h2>
+      <p id="resultDetail"></p>
+      <p id="resultScore"></p>
+      <button id="nextButton">Peta berikutnya</button>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const canvas = document.getElementById("game");
+      const ctx = canvas.getContext("2d");
+      const overlay = document.getElementById("overlay");
+      const resultBox = document.getElementById("result");
+      const tvControls = document.getElementById("tvControls");
+
+      const ui = {
+        round: document.getElementById("roundLabel"),
+        phase: document.getElementById("phaseLabel"),
+        timer: document.getElementById("timerLabel"),
+        score: document.getElementById("scoreLabel"),
+        resultTitle: document.getElementById("resultTitle"),
+        resultDetail: document.getElementById("resultDetail"),
+        resultScore: document.getElementById("resultScore"),
+        next: document.getElementById("nextButton"),
+        draw: document.getElementById("drawButton")
+      };
+
+      const START = { x: 76, y: 270 };
+      const HOME = { x: 884, y: 270 };
+      const TOTAL_ROUNDS = 7;
+      const REVEAL_MS = 7000;
+      const DRAW_MS = 12000;
+
+      // Setiap pilihan memiliki makanan dan predator yang sesuai.
+      const CHAINS = [
+        { animal: "Kelinci", emoji: "🐇", food: "Wortel", foodEmoji: "🥕", predator: "Rubah", predatorEmoji: "🦊" },
+        { animal: "Tikus", emoji: "🐁", food: "Biji", foodEmoji: "🌾", predator: "Burung hantu", predatorEmoji: "🦉" },
+        { animal: "Belalang", emoji: "🦗", food: "Daun", foodEmoji: "🍃", predator: "Katak", predatorEmoji: "🐸" },
+        { animal: "Katak", emoji: "🐸", food: "Serangga", foodEmoji: "🐛", predator: "Ular", predatorEmoji: "🐍" },
+        { animal: "Tupai", emoji: "🐿️", food: "Kacang", foodEmoji: "🌰", predator: "Rubah", predatorEmoji: "🦊" },
+        { animal: "Ulat", emoji: "🐛", food: "Daun", foodEmoji: "🍃", predator: "Burung", predatorEmoji: "🐦" },
+        { animal: "Rusa", emoji: "🦌", food: "Rumput", foodEmoji: "🌿", predator: "Serigala", predatorEmoji: "🐺" }
+      ];
+
+      let phase = "intro";
+      let round = 1;
+      let totalScore = 0;
+      let phaseDeadline = 0;
+      let map = null;
+      let route = [];
+      let drawing = false;
+      let cursor = { ...START };
+      let tvMode = false;
+      let outcome = null;
+      let heldDirection = null;
+
+      const rand = (min, max) => min + Math.random() * (max - min);
+      const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+      function makeMap() {
+        const chain = CHAINS[Math.floor(Math.random() * CHAINS.length)];
+        const objects = [];
+
+        function place(kind, name, emoji, radius) {
+          let candidate;
+          let attempts = 0;
+
+          do {
+            candidate = {
+              x: rand(175, 785),
+              y: rand(95, 445),
+              kind, name, emoji, radius
+            };
+            attempts++;
+          } while (
+            attempts < 500 &&
+            (distance(candidate, START) < 95 ||
+             distance(candidate, HOME) < 95 ||
+             objects.some(object => distance(candidate, object) < 82))
+          );
+
+          objects.push(candidate);
+        }
+
+        for (let i = 0; i < 3; i++) {
+          place("food", chain.food, chain.foodEmoji, 25);
+        }
+        for (let i = 0; i < 2; i++) {
+          place("predator", chain.predator, chain.predatorEmoji, 27);
+        }
+        place("water", "Air", "💧", 30);
+
+        const trees = Array.from({ length: 26 }, () => ({
+          x: rand(20, 940),
+          y: rand(20, 520),
+          size: rand(10, 23)
+        }));
+
+        return { chain, objects, trees };
+      }
+
+      function startRound() {
+        map = makeMap();
+        route = [{ ...START }];
+        cursor = { ...START };
+        drawing = false;
+        tvMode = false;
+        outcome = null;
+        phase = "reveal";
+        phaseDeadline = performance.now() + REVEAL_MS;
+
+        overlay.hidden = true;
+        resultBox.hidden = true;
+        tvControls.hidden = true;
+        updateHud();
+      }
+
+      function beginDrawing() {
+        phase = "draw";
+        phaseDeadline = performance.now() + DRAW_MS;
+        drawing = false;
+        updateHud();
+      }
+
+      function updateHud(now = performance.now()) {
+        ui.round.textContent = `Peta ${round} / ${TOTAL_ROUNDS}`;
+        ui.score.textContent = `Total: ${totalScore}`;
+
+        const labels = {
+          intro: "Siap bermain",
+          reveal: "Amati peta",
+          draw: "Gambar lintasan",
+          result: "Cek dan skoring",
+          finished: "Selesai"
+        };
+        ui.phase.textContent = labels[phase];
+
+        ui.timer.textContent =
+          phase === "reveal" || phase === "draw"
+            ? `Waktu: ${Math.max(0, Math.ceil((phaseDeadline - now) / 1000))} dtk`
+            : "Waktu: —";
+      }
+
+      function addRoutePoint(point) {
+        const last = route[route.length - 1];
+        if (distance(last, point) >= 3) {
+          route.push({ x: point.x, y: point.y });
+        }
+      }
+
+      function canvasPoint(event) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+          x: Math.max(0, Math.min(960, (event.clientX - rect.left) * 960 / rect.width)),
+          y: Math.max(0, Math.min(540, (event.clientY - rect.top) * 540 / rect.height))
+        };
+      }
+
+      canvas.addEventListener("pointerdown", event => {
+        if (phase !== "draw") return;
+        const point = canvasPoint(event);
+
+        // Lintasan baru harus dimulai di batu; lintasan lanjutan dari ujung terakhir.
+        if (distance(point, route[route.length - 1]) > 38) return;
+
+        canvas.setPointerCapture(event.pointerId);
+        drawing = true;
+        cursor = point;
+        addRoutePoint(point);
+      });
+
+      canvas.addEventListener("pointermove", event => {
+        if (phase !== "draw" || !drawing) return;
+        cursor = canvasPoint(event);
+        addRoutePoint(cursor);
+      });
+
+      function stopPointerDrawing() {
+        if (!tvMode) drawing = false;
+      }
+      canvas.addEventListener("pointerup", stopPointerDrawing);
+      canvas.addEventListener("pointercancel", stopPointerDrawing);
+
+      function toggleTvDrawing() {
+        if (phase !== "draw") return;
+        tvMode = true;
+        tvControls.hidden = false;
+        cursor = { ...route[route.length - 1] };
+        drawing = !drawing;
+        ui.draw.textContent = drawing ? "■" : "●";
+      }
+
+      function moveCursor(direction) {
+        if (phase !== "draw") return;
+        tvMode = true;
+        tvControls.hidden = false;
+
+        const step = 14;
+        const vectors = {
+          up: [0, -step], down: [0, step],
+          left: [-step, 0], right: [step, 0]
+        };
+        const [dx, dy] = vectors[direction];
+        cursor.x = Math.max(12, Math.min(948, cursor.x + dx));
+        cursor.y = Math.max(12, Math.min(528, cursor.y + dy));
+
+        if (drawing) addRoutePoint(cursor);
+      }
+
+      document.addEventListener("keydown", event => {
+        if (phase !== "draw") return;
+
+        const directions = {
+          ArrowUp: "up", ArrowDown: "down",
+          ArrowLeft: "left", ArrowRight: "right"
+        };
+
+        if (directions[event.key]) {
+          event.preventDefault();
+          moveCursor(directions[event.key]);
+        } else if (event.key === "Enter" && event.target.tagName !== "BUTTON") {
+          event.preventDefault();
+          toggleTvDrawing();
+        } else if (event.code === "Space") {
+          event.preventDefault();
+          finishRound();
+        }
+      });
+
+      ui.draw.addEventListener("click", toggleTvDrawing);
+
+      document.querySelectorAll("[data-dir]").forEach(button => {
+        const direction = button.dataset.dir;
+
+        button.addEventListener("pointerdown", event => {
+          event.preventDefault();
+          button.setPointerCapture(event.pointerId);
+          moveCursor(direction);
+          clearInterval(heldDirection);
+          heldDirection = setInterval(() => moveCursor(direction), 65);
+        });
+
+        for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) {
+          button.addEventListener(type, () => {
+            clearInterval(heldDirection);
+            heldDirection = null;
+          });
+        }
+      });
+
+      // Titik terdekat suatu objek pada satu ruas lintasan.
+      function hitOnSegment(a, b, target, radius) {
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const lengthSquared = dx * dx + dy * dy;
+        if (!lengthSquared) return null;
+
+        const t = Math.max(0, Math.min(1,
+          ((target.x - a.x) * dx + (target.y - a.y) * dy) / lengthSquared
+        ));
+
+        const nearest = { x: a.x + t * dx, y: a.y + t * dy };
+        return distance(nearest, target) <= radius ? t : null;
+      }
+
+      function scoreRoute() {
+        const events = [];
+        let travelled = 0;
+
+        for (let i = 1; i < route.length; i++) {
+          const a = route[i - 1];
+          const b = route[i];
+          const length = distance(a, b);
+
+          map.objects.forEach((object, index) => {
+            const t = hitOnSegment(a, b, object, object.radius);
+            if (t !== null) {
+              events.push({
+                at: travelled + t * length,
+                kind: object.kind,
+                index,
+                object
+              });
+            }
+          });
+
+          const homeT = hitOnSegment(a, b, HOME, 29);
+          if (homeT !== null) {
+            events.push({
+              at: travelled + homeT * length,
+              kind: "home"
+            });
+          }
+
+          travelled += length;
+        }
+
+        events.sort((a, b) => a.at - b.at);
+
+        const visited = new Set();
+        const counts = { food: 0, water: 0, predator: 0 };
+        let reachedHome = false;
+        let points = 0;
+
+        for (const event of events) {
+          if (event.kind === "home") {
+            reachedHome = true;
+            break; // Yang dilewati setelah tiba di rumah tidak dihitung.
+          }
+          if (visited.has(event.index)) continue;
+
+          visited.add(event.index);
+          counts[event.kind]++;
+
+          if (event.kind === "food") points += 10;
+          if (event.kind === "water") points += 20;
+          if (event.kind === "predator") points -= 5;
+        }
+
+        return { points, counts, reachedHome, visited };
+      }
+
+      function finishRound() {
+        if (phase !== "draw") return;
+
+        drawing = false;
+        outcome = scoreRoute();
+        totalScore += outcome.points;
+        phase = "result";
+
+        ui.resultTitle.textContent =
+          outcome.reachedHome ? "🏠 Sampai di rumah!" : "⌛ Belum sampai di rumah";
+        ui.resultDetail.textContent =
+          `${map.chain.animal} · makanan ${outcome.counts.food} × 10, ` +
+          `air ${outcome.counts.water} × 20, ` +
+          `predator ${outcome.counts.predator} × −5.`;
+        ui.resultScore.textContent =
+          `Skor peta ini: ${outcome.points >= 0 ? "+" : ""}${outcome.points} · ` +
+          `Total: ${totalScore}`;
+        ui.next.textContent =
+          round === TOTAL_ROUNDS ? "Lihat hasil akhir" : "Peta berikutnya";
+
+        resultBox.hidden = false;
+        tvControls.hidden = true;
+        updateHud();
+      }
+
+      document.getElementById("startButton").addEventListener("click", () => {
+        round = 1;
+        totalScore = 0;
+        startRound();
+      });
+
+      ui.next.addEventListener("click", () => {
+        if (round < TOTAL_ROUNDS) {
+          round++;
+          startRound();
+          return;
+        }
+
+        phase = "finished";
+        resultBox.hidden = true;
+        overlay.hidden = false;
+        document.getElementById("overlayTitle").textContent =
+          "🎉 Tujuh peta selesai!";
+        document.getElementById("overlayText").textContent =
+          `Skor akhir kamu: ${totalScore}. Hewan dan posisi akan diacak lagi saat bermain ulang.`;
+        document.getElementById("startButton").textContent = "Main lagi";
+        updateHud();
+      });
+
+      function roundedLabel(text, x, y, background) {
+        ctx.font = "bold 15px system-ui, sans-serif";
+        const width = ctx.measureText(text).width + 20;
+        ctx.fillStyle = background;
+        ctx.beginPath();
+        ctx.roundRect(x - width / 2, y - 14, width, 24, 8);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(text, x, y - 2);
+      }
+
+      function drawBackdrop(showMap) {
+        ctx.fillStyle = showMap ? "#9bc477" : "#e8e6d8";
+        ctx.fillRect(0, 0, 960, 540);
+
+        if (!showMap || !map) return;
+
+        ctx.fillStyle = "#75a85e";
+        ctx.beginPath();
+        ctx.ellipse(480, 285, 430, 195, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        for (const tree of map.trees) {
+          ctx.fillStyle = "#567e48";
+          ctx.fillRect(tree.x - 3, tree.y, 6, tree.size + 9);
+          ctx.fillStyle = "#397b43";
+          ctx.beginPath();
+          ctx.arc(tree.x, tree.y, tree.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      function drawMarker(point, emoji, label, color) {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, 31, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.font = "31px 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(emoji, point.x, point.y + 1);
+        roundedLabel(label, point.x, point.y + 53, "#243d32");
+      }
+
+      function drawObjects() {
+        if (!map) return;
+
+        map.objects.forEach((object, index) => {
+          const colors = {
+            food: "#f8e9a5",
+            predator: "#f1a899",
+            water: "#9dddf0"
+          };
+
+          ctx.fillStyle = colors[object.kind];
+          ctx.beginPath();
+          ctx.arc(object.x, object.y, object.radius + 8, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.font = "31px 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(object.emoji, object.x, object.y + 1);
+
+          roundedLabel(object.name, object.x, object.y + 48, "#263c31");
+
+          if (phase === "result" && outcome.visited.has(index)) {
+            ctx.strokeStyle = object.kind === "predator" ? "#b72d35" : "#fff176";
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.arc(object.x, object.y, object.radius + 12, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        });
+      }
+
+      function drawRoute() {
+        if (route.length < 2) return;
+
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        ctx.moveTo(route[0].x, route[0].y);
+        for (let i = 1; i < route.length; i++) {
+          ctx.lineTo(route[i].x, route[i].y);
+        }
+
+        ctx.strokeStyle = "#263a30aa";
+        ctx.lineWidth = 13;
+        ctx.stroke();
+        ctx.strokeStyle = "#ffd84f";
+        ctx.lineWidth = 8;
+        ctx.stroke();
+      }
+
+      function render() {
+        const showMap =
+          phase === "reveal" || phase === "result" || phase === "finished";
+
+        drawBackdrop(showMap);
+
+        if (showMap && map) drawObjects();
+        if (phase === "draw" || phase === "result") drawRoute();
+
+        drawMarker(START, "🪨", "BATU / AWAL", "#c8d3c5");
+        drawMarker(HOME, "🏠", "RUMAH", "#ffe3a2");
+
+        if (showMap && map) {
+          ctx.font = "29px 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(map.chain.emoji, START.x, START.y - 49);
+
+          roundedLabel(
+            `${map.chain.animal} makan ${map.chain.food} · awas ${map.chain.predator}!`,
+            480, 32, "#203c2d"
+          );
+        }
+
+        if (phase === "draw" && tvMode) {
+          ctx.strokeStyle = drawing ? "#e46d4b" : "#244a63";
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.arc(cursor.x, cursor.y, 12, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(cursor.x - 19, cursor.y);
+          ctx.lineTo(cursor.x + 19, cursor.y);
+          ctx.moveTo(cursor.x, cursor.y - 19);
+          ctx.lineTo(cursor.x, cursor.y + 19);
+          ctx.stroke();
+        }
+      }
+
+      function frame(now) {
+        if (phase === "reveal" && now >= phaseDeadline) {
+          beginDrawing();
+        } else if (phase === "draw" && now >= phaseDeadline) {
+          finishRound();
+        }
+
+        if (phase === "reveal" || phase === "draw") updateHud(now);
+        render();
+        requestAnimationFrame(frame);
+      }
+
+      requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>
